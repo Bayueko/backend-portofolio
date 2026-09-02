@@ -1,8 +1,13 @@
-// Simpanan data sederhana di level runtime instance
-let daftarPesan = [];
+const { createClient } = require('@libsql/client');
+
+// Buat koneksi ke Turso menggunakan kredensial dari Environment Variables
+const db = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN
+});
 
 module.exports = async (req, res) => {
-    // Header CORS lengkap
+    // Header CORS
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -11,23 +16,23 @@ module.exports = async (req, res) => {
         'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
     );
 
-    // Tangani preflight OPTIONS dari browser
+    // Tangani preflight OPTIONS browser
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
     try {
-        // Endpoint GET: Menampilkan pesan
+        // Endpoint GET: Ambil pesan dari Turso Cloud
         if (req.method === 'GET') {
+            const hasil = await db.execute('SELECT * FROM pesan ORDER BY id DESC');
             return res.status(200).json({
-                total: daftarPesan.length,
-                data: daftarPesan
+                total: hasil.rows.length,
+                data: hasil.rows
             });
         }
 
-        // Endpoint POST: Menerima pesan baru
+        // Endpoint POST: Simpan pesan baru ke Turso Cloud
         if (req.method === 'POST') {
-            // Parsing body secara aman (jika format berupa JSON string)
             let body = req.body;
             if (typeof body === 'string') {
                 try {
@@ -47,20 +52,21 @@ module.exports = async (req, res) => {
                 });
             }
 
-            const dataBaru = {
-                id: daftarPesan.length + 1,
-                nama: String(nama),
-                email: email ? String(email) : 'Tidak ada email',
-                pesan: String(pesan),
-                waktu: new Date().toISOString()
-            };
-
-            daftarPesan.unshift(dataBaru);
+            const insertResult = await db.execute({
+                sql: 'INSERT INTO pesan (nama, email, pesan) VALUES (?, ?, ?)',
+                args: [nama, email || 'Tidak ada email', pesan]
+            });
 
             return res.status(201).json({
                 status: 'sukses',
-                pesan: 'Pesan berhasil disimpan!',
-                data: dataBaru
+                pesan: 'Pesan berhasil disimpan ke cloud database!',
+                data: {
+                    id: Number(insertResult.lastInsertRowid),
+                    nama,
+                    email: email || 'Tidak ada email',
+                    pesan,
+                    waktu: new Date().toISOString()
+                }
             });
         }
 
@@ -69,7 +75,7 @@ module.exports = async (req, res) => {
     } catch (err) {
         return res.status(500).json({
             status: 'error',
-            pesan: err.message || 'Terjadi kesalahan internal server'
+            pesan: err.message || 'Terjadi kesalahan pada database'
         });
     }
 };
