@@ -1,5 +1,3 @@
-const { createClient } = require('@libsql/client/web');
-
 module.exports = async (req, res) => {
     // Header CORS
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -14,27 +12,77 @@ module.exports = async (req, res) => {
         return res.status(200).end();
     }
 
-    try {
-        let url = process.env.TURSO_DATABASE_URL || '';
-        const authToken = process.env.TURSO_AUTH_TOKEN;
+    let dbUrl = process.env.TURSO_DATABASE_URL || '';
+    const authToken = process.env.TURSO_AUTH_TOKEN;
 
-        if (!url || !authToken) {
-            return res.status(500).json({
-                status: 'error',
-                pesan: 'TURSO_DATABASE_URL atau TURSO_AUTH_TOKEN belum terpasang di Vercel Settings!'
+    if (!dbUrl || !authToken) {
+        return res.status(500).json({
+            status: 'error',
+            pesan: 'TURSO_DATABASE_URL atau TURSO_AUTH_TOKEN belum terpasang di Vercel.'
+        });
+    }
+
+    // Normalisasi URL ke format HTTPS untuk REST API Turso
+    dbUrl = dbUrl.replace('libsql://', 'https://');
+    if (dbUrl.endsWith('/')) {
+        dbUrl = dbUrl.slice(0, -1);
+    }
+    const endpointTurso = `${dbUrl}/v2/pipeline`;
+
+    // Helper fungsi untuk mengeksekusi query SQL via REST API Turso
+    async function executeQuery(sql, args = []) {
+        const response = await fetch(endpointTurso, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                requests: [
+                    {
+                        type: 'execute',
+                        stmt: {
+                            sql: sql,
+                            args: args.map(arg => {
+                                if (typeof arg === 'number') return { type: 'integer', value: String(arg) };
+                                return { type: 'text', value: String(arg) };
+                            })
+                        }
+                    },
+                    { type: 'close' }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Turso Error (${response.status}): ${errText}`);
+        }
+
+        const data = await response.json();
+        const execResult = data.results[0];
+        
+        if (execResult.type === 'error') {
+            throw new Error(execResult.error.message);
+        }
+
+        // Parsing baris hasil query SELECT
+        const cols = execResult.response.result.cols.map(c => c.name);
+        const rows = execResult.response.result.rows.map(row => {
+            const obj = {};
+            row.forEach((val, idx) => {
+                obj[cols[idx]] = val.value;
             });
-        }
+            return obj;
+        });
 
-        // Ubah format libsql:// menjadi https:// jika diperlukan oleh web client
-        if (url.startsWith('libsql://')) {
-            url = url.replace('libsql://', 'https://');
-        }
+        return { rows };
+    }
 
-        const db = createClient({ url, authToken });
-
+    try {
         // GET: Ambil daftar pesan
         if (req.method === 'GET') {
-            const hasil = await db.execute('SELECT * FROM pesan ORDER BY id DESC');
+            const hasil = await executeQuery('SELECT * FROM pesan ORDER BY id DESC');
             return res.status(200).json({
                 total: hasil.rows.length,
                 data: hasil.rows
@@ -62,16 +110,15 @@ module.exports = async (req, res) => {
                 });
             }
 
-            const insertResult = await db.execute({
-                sql: 'INSERT INTO pesan (nama, email, pesan) VALUES (?, ?, ?)',
-                args: [nama, email || 'Tidak ada email', pesan]
-            });
+            await executeQuery(
+                'INSERT INTO pesan (nama, email, pesan) VALUES (?, ?, ?)',
+                [nama, email || 'Tidak ada email', pesan]
+            );
 
             return res.status(201).json({
                 status: 'sukses',
                 pesan: 'Pesan berhasil disimpan ke Turso!',
                 data: {
-                    id: Number(insertResult.lastInsertRowid),
                     nama,
                     email: email || 'Tidak ada email',
                     pesan,
