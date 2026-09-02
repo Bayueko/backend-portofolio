@@ -1,23 +1,21 @@
-// Database memori sederhana untuk serverless function
 let daftarPesan = [];
 
-export default function handler(req, res) {
-    // Header CORS agar Netlify diizinkan mengakses
-    res.setHeader('Access-Control-Allow-Credentials', true);
+module.exports = (req, res) => {
+    // Header CORS
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
     res.setHeader(
         'Access-Control-Allow-Headers',
         'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
     );
 
-    // Tangani pre-flight request dari browser
+    // Tangani pre-flight OPTIONS browser
     if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
+        return res.status(200).end();
     }
 
-    // Endpoint GET: Ambil daftar pesan
+    // GET: Ambil pesan
     if (req.method === 'GET') {
         return res.status(200).json({
             total: daftarPesan.length,
@@ -25,19 +23,22 @@ export default function handler(req, res) {
         });
     }
 
-    // Endpoint POST: Simpan pesan baru
+    // POST: Simpan pesan
     if (req.method === 'POST') {
         const { nama, email, pesan } = req.body || {};
 
         if (!nama || !pesan) {
-            return res.status(400).json({ status: 'error', pesan: 'Nama dan pesan wajib diisi!' });
+            return res.status(400).json({
+                status: 'error',
+                pesan: 'Nama dan pesan wajib diisi!'
+            });
         }
 
         const dataBaru = {
             id: daftarPesan.length + 1,
-            nama,
+            nama: nama,
             email: email || 'Tidak ada email',
-            pesan,
+            pesan: pesan,
             waktu: new Date().toISOString()
         };
 
@@ -50,5 +51,5 @@ export default function handler(req, res) {
         });
     }
 
-    return res.status(405).json({ status: 'error', pesan: 'Metode tidak didukung' });
-}
+    return res.status(405).json({ status: 'error', pesan: 'Metode tidak diizinkan' });
+};
