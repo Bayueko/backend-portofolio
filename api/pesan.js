@@ -1,11 +1,5 @@
 const { createClient } = require('@libsql/client');
 
-// Buat koneksi ke Turso menggunakan kredensial dari Environment Variables
-const db = createClient({
-    url: process.env.TURSO_DATABASE_URL,
-    authToken: process.env.TURSO_AUTH_TOKEN
-});
-
 module.exports = async (req, res) => {
     // Header CORS
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -22,6 +16,20 @@ module.exports = async (req, res) => {
     }
 
     try {
+        // Validasi keberadaan kredensial Turso
+        const url = process.env.TURSO_DATABASE_URL;
+        const authToken = process.env.TURSO_AUTH_TOKEN;
+
+        if (!url || !authToken) {
+            return res.status(500).json({
+                status: 'error',
+                pesan: 'Konfigurasi Turso belum lengkap di Environment Variables Vercel!'
+            });
+        }
+
+        // Inisialisasi koneksi database di dalam handler
+        const db = createClient({ url, authToken });
+
         // Endpoint GET: Ambil pesan dari Turso Cloud
         if (req.method === 'GET') {
             const hasil = await db.execute('SELECT * FROM pesan ORDER BY id DESC');
@@ -75,7 +83,7 @@ module.exports = async (req, res) => {
     } catch (err) {
         return res.status(500).json({
             status: 'error',
-            pesan: err.message || 'Terjadi kesalahan pada database'
+            pesan: err.message || 'Terjadi kesalahan sistem'
         });
     }
 };
