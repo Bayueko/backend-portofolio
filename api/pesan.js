@@ -1,7 +1,6 @@
 const { createClient } = require('@libsql/client');
 
 module.exports = async (req, res) => {
-    // Header CORS
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -10,27 +9,23 @@ module.exports = async (req, res) => {
         'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
     );
 
-    // Tangani preflight OPTIONS browser
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
+    const url = process.env.TURSO_DATABASE_URL;
+    const authToken = process.env.TURSO_AUTH_TOKEN;
+
+    if (!url || !authToken) {
+        return res.status(500).json({
+            status: 'error',
+            pesan: 'TURSO_DATABASE_URL atau TURSO_AUTH_TOKEN belum disetel di Vercel.'
+        });
+    }
+
     try {
-        // Validasi keberadaan kredensial Turso
-        const url = process.env.TURSO_DATABASE_URL;
-        const authToken = process.env.TURSO_AUTH_TOKEN;
-
-        if (!url || !authToken) {
-            return res.status(500).json({
-                status: 'error',
-                pesan: 'Konfigurasi Turso belum lengkap di Environment Variables Vercel!'
-            });
-        }
-
-        // Inisialisasi koneksi database di dalam handler
         const db = createClient({ url, authToken });
 
-        // Endpoint GET: Ambil pesan dari Turso Cloud
         if (req.method === 'GET') {
             const hasil = await db.execute('SELECT * FROM pesan ORDER BY id DESC');
             return res.status(200).json({
@@ -39,13 +34,12 @@ module.exports = async (req, res) => {
             });
         }
 
-        // Endpoint POST: Simpan pesan baru ke Turso Cloud
         if (req.method === 'POST') {
             let body = req.body;
             if (typeof body === 'string') {
                 try {
                     body = JSON.parse(body);
-                } catch (e) {
+                } catch {
                     body = {};
                 }
             }
@@ -67,7 +61,7 @@ module.exports = async (req, res) => {
 
             return res.status(201).json({
                 status: 'sukses',
-                pesan: 'Pesan berhasil disimpan ke cloud database!',
+                pesan: 'Pesan berhasil disimpan!',
                 data: {
                     id: Number(insertResult.lastInsertRowid),
                     nama,
@@ -78,12 +72,12 @@ module.exports = async (req, res) => {
             });
         }
 
-        return res.status(405).json({ status: 'error', pesan: 'Metode HTTP tidak diizinkan' });
-
+        return res.status(405).json({ status: 'error', pesan: 'Metode tidak didukung.' });
     } catch (err) {
         return res.status(500).json({
             status: 'error',
-            pesan: err.message || 'Terjadi kesalahan sistem'
+            pesan: err.message,
+            stack: err.stack
         });
     }
 };
