@@ -1,6 +1,7 @@
-const { createClient } = require('@libsql/client');
+const { createClient } = require('@libsql/client/web');
 
 module.exports = async (req, res) => {
+    // Header CORS
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -13,19 +14,25 @@ module.exports = async (req, res) => {
         return res.status(200).end();
     }
 
-    const url = process.env.TURSO_DATABASE_URL;
-    const authToken = process.env.TURSO_AUTH_TOKEN;
-
-    if (!url || !authToken) {
-        return res.status(500).json({
-            status: 'error',
-            pesan: 'TURSO_DATABASE_URL atau TURSO_AUTH_TOKEN belum disetel di Vercel.'
-        });
-    }
-
     try {
+        let url = process.env.TURSO_DATABASE_URL || '';
+        const authToken = process.env.TURSO_AUTH_TOKEN;
+
+        if (!url || !authToken) {
+            return res.status(500).json({
+                status: 'error',
+                pesan: 'TURSO_DATABASE_URL atau TURSO_AUTH_TOKEN belum terpasang di Vercel Settings!'
+            });
+        }
+
+        // Ubah format libsql:// menjadi https:// jika diperlukan oleh web client
+        if (url.startsWith('libsql://')) {
+            url = url.replace('libsql://', 'https://');
+        }
+
         const db = createClient({ url, authToken });
 
+        // GET: Ambil daftar pesan
         if (req.method === 'GET') {
             const hasil = await db.execute('SELECT * FROM pesan ORDER BY id DESC');
             return res.status(200).json({
@@ -34,6 +41,7 @@ module.exports = async (req, res) => {
             });
         }
 
+        // POST: Simpan pesan baru
         if (req.method === 'POST') {
             let body = req.body;
             if (typeof body === 'string') {
@@ -61,7 +69,7 @@ module.exports = async (req, res) => {
 
             return res.status(201).json({
                 status: 'sukses',
-                pesan: 'Pesan berhasil disimpan!',
+                pesan: 'Pesan berhasil disimpan ke Turso!',
                 data: {
                     id: Number(insertResult.lastInsertRowid),
                     nama,
@@ -76,8 +84,7 @@ module.exports = async (req, res) => {
     } catch (err) {
         return res.status(500).json({
             status: 'error',
-            pesan: err.message,
-            stack: err.stack
+            pesan: err.message
         });
     }
 };
